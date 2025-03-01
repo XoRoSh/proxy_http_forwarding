@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL,
+    method TEXT NOT NULL,
+    request_headers TEXT,
+    response_headers TEXT,
+    response_body TEXT,
+    status_code INTEGER,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
