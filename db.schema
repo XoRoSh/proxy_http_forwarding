@@ -6,5 +6,6 @@ CREATE TABLE IF NOT EXISTS cache (
     response_headers TEXT,
     response_body TEXT,
     status_code INTEGER,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    blacklist BOOLEAN
 );
