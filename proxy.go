@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// TODO: multithread, cache speed test, post caching
 var customTransport = http.DefaultTransport
 var db *sql.DB
 
@@ -109,6 +109,7 @@ func isBlacklisted(url string) bool {
 	return blacklisted
 }
 func handleRequest(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
 
 	if isBlacklisted(r.URL.String()) {
 		http.Error(w, "URL is blacklisted", http.StatusForbidden)
@@ -125,6 +126,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	if isInCache(targetURL.String()) {
 		cachedResponseIfIsInCache(targetURL.String(), w)
+		fmt.Print("cache time: ", time.Since(startTime))
 		return
 	}
 
@@ -171,6 +173,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Set the status code of the original response to the status code of the proxy response
 	w.WriteHeader(resp.StatusCode)
 	w.Write(responseBody)
+	fmt.Print("cache time: ", time.Since(startTime))
 
 	// Copy the body of the proxy response to the original response
 	// io.Copy(w, resp.Body)
@@ -193,9 +196,6 @@ func handleRequestSSL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// check that URL's in the blacklist
-
-	// Establish a TCP connection to the host
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
@@ -208,10 +208,9 @@ func handleRequestSSL(w http.ResponseWriter, r *http.Request) {
 	}
 	defer clientConn.Close()
 
-	// Send a 200 OK response to the client to establish the connection
 	clientConn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
 
-	// Establish a TCP connection to the host
+	// tcp connection
 	serverConn, err := net.Dial("tcp", host)
 	if err != nil {
 		http.Error(w, "Error establishing server connection", http.StatusInternalServerError)
@@ -219,7 +218,6 @@ func handleRequestSSL(w http.ResponseWriter, r *http.Request) {
 	}
 	defer serverConn.Close()
 
-	// Copy data between the client and server
 	go io.Copy(serverConn, clientConn)
 	io.Copy(clientConn, serverConn)
 }
