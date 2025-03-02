@@ -3,7 +3,7 @@
 # Database file path
 DB_FILE="/Users/levganzha/Golang/go_proxy_http_forwarding/db.db"
 
-# TTL in seconds (e.g., 3600 for 1 hour)
+# TTL in seconds 
 TTL=5
 
 # SQLite command to delete cache entries older than the TTL
