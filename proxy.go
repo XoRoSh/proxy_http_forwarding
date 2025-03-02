@@ -14,6 +14,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// TODO: multithread, cache speed test, post caching
 var customTransport = http.DefaultTransport
 var db *sql.DB
 
@@ -127,7 +128,6 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	print("Request URL: ", targetURL.String())
 	proxyReq, err := http.NewRequest(r.Method, targetURL.String(), r.Body)
 	fmt.Print("Request URL: ", targetURL.String())
 	if err != nil {
@@ -262,9 +262,8 @@ func main() {
 		Addr:    ":8080",
 		Handler: http.HandlerFunc(handleRequest),
 	}
-
-	// Start the server and log any errors
 	log.Println("Starting proxy server on :8080")
+
 	err := server.ListenAndServe()
 	if err != nil {
 		log.Fatal("Error starting proxy server: ", err)
