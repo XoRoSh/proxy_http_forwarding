@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -11,21 +9,15 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"reflect"
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 var customTransport = http.DefaultTransport
+var db *sql.DB
 
 func cacheResponse(url string, method string, requestHeaders, responseHeaders, responseBody string, statusCode int) {
-	db, err := sql.Open("sqlite3", "./db.db")
-	if err != nil {
-		log.Println("Error opening database:", err)
-		return
-	}
-	defer db.Close()
 
 	headers := http.Header{}
 	for _, header := range strings.Split(responseHeaders, "\n") {
@@ -37,16 +29,6 @@ func cacheResponse(url string, method string, requestHeaders, responseHeaders, r
 			continue
 		}
 		headers.Add(parts[0], parts[1])
-	}
-
-	if headers.Get("Content-Encoding") == "gzip" {
-		decodedBody, err := decompressGzip([]byte(responseBody))
-		if err != nil {
-			log.Println("Error decompressing response before caching:", err)
-			return
-		}
-		responseBody = string(decodedBody)
-		headers.Del("Content-Encoding") // Remove gzip encoding for caching
 	}
 
 	headersJSON, err := json.Marshal(headers)
@@ -71,14 +53,9 @@ func cacheResponse(url string, method string, requestHeaders, responseHeaders, r
 }
 
 func isInCache(url string) bool {
-	db, err := sql.Open("sqlite3", "./db.db")
-	if err != nil {
-		log.Println("Error opening database:", err)
-	}
-	defer db.Close()
 
 	var exists bool
-	err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM cache WHERE url = ?)", url).Scan(&exists)
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM cache WHERE url = ?)", url).Scan(&exists)
 	if err != nil {
 		log.Println("Error checking if is in cache database:", err)
 	}
@@ -86,41 +63,14 @@ func isInCache(url string) bool {
 	return exists
 }
 
-func decompressGzip(data []byte) ([]byte, error) {
-	reader, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-
-	var decompressed bytes.Buffer
-	_, err = io.Copy(&decompressed, reader)
-	if err != nil {
-		return nil, err
-	}
-
-	return decompressed.Bytes(), nil
-}
-
 func cachedResponseIfIsInCache(url string, w http.ResponseWriter) {
-	db, err := sql.Open("sqlite3", "./db.db")
-	if err != nil {
-		log.Println("Error opening database:", err)
-		return
-	}
-	defer db.Close()
 
 	var responseHeaders, responseBody string
 	var statusCode int
-	err = db.QueryRow("SELECT response_headers, response_body, status_code FROM cache WHERE url = ?", url).Scan(&responseHeaders, &responseBody, &statusCode)
+	err := db.QueryRow("SELECT response_headers, response_body, status_code FROM cache WHERE url = ?", url).Scan(&responseHeaders, &responseBody, &statusCode)
 	if err != nil {
 		log.Println("Error querying cached response:", err)
 		return
-	}
-
-	// If cached response is 304, change it to 200 (OK)
-	if statusCode == http.StatusNotModified {
-		statusCode = http.StatusOK
 	}
 
 	// Write the cached response headers to the original response
@@ -136,21 +86,6 @@ func cachedResponseIfIsInCache(url string, w http.ResponseWriter) {
 		headers.Add(parts[0], parts[1])
 	}
 
-	// Ensure Content-Type is present
-	contentType := headers.Get("Content-Type")
-	if contentType == "" {
-		if strings.Contains(responseBody, "<html") {
-			contentType = "text/html; charset=utf-8"
-		} else {
-			contentType = "text/plain; charset=utf-8"
-		}
-		headers.Set("Content-Type", contentType)
-	}
-
-	// Remove Content-Disposition if it exists (prevents forced downloads)
-	headers.Del("Content-Disposition")
-	headers.Del("Content-Encoding")
-
 	for name, values := range headers {
 		for _, value := range values {
 			w.Header().Add(name, value)
@@ -163,15 +98,9 @@ func cachedResponseIfIsInCache(url string, w http.ResponseWriter) {
 }
 
 func isBlacklisted(url string) bool {
-	db, err := sql.Open("sqlite3", "./db.db")
-	if err != nil {
-		log.Println("Error opening database:", err)
-		return false
-	}
-	defer db.Close()
 
 	var blacklisted bool
-	err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM cache WHERE url = ? AND blacklist = 1)", url).Scan(&blacklisted)
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM cache WHERE url = ? AND blacklist = 1)", url).Scan(&blacklisted)
 	if err != nil {
 		log.Println("Error checking if URL is blacklisted:", err)
 		return false
@@ -192,7 +121,6 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	targetURL := r.URL
-	fmt.Println("Handling HTTP request for URL: ", reflect.TypeOf(targetURL))
 
 	if isInCache(targetURL.String()) {
 		cachedResponseIfIsInCache(targetURL.String(), w)
@@ -304,25 +232,27 @@ func readSchema(filename string) (string, error) {
 	return string(data), nil
 }
 
-func initDB() (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", "./db.db")
+func initDB() {
+	var err error
+	db, err = sql.Open("sqlite3", "./db.db")
 	if err != nil {
-		fmt.Println("Error opening database")
-		return nil, err
+		log.Fatal("Error opening database")
 	}
 
 	_, err = db.Exec("DROP TABLE IF EXISTS cache")
 	if err != nil {
-		return nil, err
+		log.Fatal("Error reading schema:", err)
 	}
+
 	schema, err := readSchema("./db.schema")
+	if err != nil {
+		log.Fatal("Error reading schema:", err)
+	}
 
 	_, err = db.Exec(schema)
 	if err != nil {
-		return nil, err
+		log.Fatal("Error applying schema:", err)
 	}
-	defer db.Close()
-	return db, nil
 }
 
 func main() {
